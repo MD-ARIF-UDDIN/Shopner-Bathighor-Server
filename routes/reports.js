@@ -15,13 +15,24 @@ router.use(protect);
 const calculateMonthsElapsed = (joiningDate) => {
   const start = new Date(joiningDate);
   const now = new Date();
-  // Billing ends at previous month
-  const billingEnd = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  if (start > billingEnd) return 0;
+
   const startYear = start.getFullYear();
   const startMonth = start.getMonth();
-  const endYear = billingEnd.getFullYear();
-  const endMonth = billingEnd.getMonth();
+
+  const nowYear = now.getFullYear();
+  const nowMonth = now.getMonth();
+
+  let endYear = nowYear;
+  let endMonth = nowMonth - 1;
+  if (endMonth < 0) {
+    endMonth = 11;
+    endYear -= 1;
+  }
+
+  if (startYear > endYear || (startYear === endYear && startMonth > endMonth)) {
+    return 0;
+  }
+
   return (endYear - startYear) * 12 + (endMonth - startMonth) + 1;
 };
 
@@ -72,6 +83,14 @@ router.get('/dashboard', async (req, res) => {
     // 7. Total Profit (Return Amount - Investment Amount for all projects)
     const totalProfit = projects.reduce((sum, proj) => sum + (proj.returnAmount - proj.investmentAmount), 0);
 
+    // Realized Profit (amount received after recovering the main investment amount)
+    const totalRealizedProfit = projects.reduce((sum, proj) => {
+      const projInstallments = installments.filter(inst => String(inst.project) === String(proj._id));
+      const totalPaid = projInstallments.reduce((s, inst) => s + inst.amount, 0);
+      const earnedProfit = Math.max(0, totalPaid - proj.investmentAmount);
+      return sum + earnedProfit;
+    }, 0);
+
     // 8. Active Projects
     const activeProjects = await Project.countDocuments({ status: 'active' });
 
@@ -88,6 +107,7 @@ router.get('/dashboard', async (req, res) => {
       totalInvestments,
       totalInstallmentsCollected,
       totalProfit,
+      totalRealizedProfit: Math.round(totalRealizedProfit),
       activeProjects,
       totalExpenses
     });
@@ -137,7 +157,7 @@ const buildDateFilter = (query) => {
 router.get('/member-deposits', async (req, res) => {
   try {
     const dateFilter = buildDateFilter(req.query);
-    
+
     // Query deposits
     const deposits = await Deposit.find(dateFilter)
       .populate('member', 'name memberId mobile')
@@ -189,7 +209,7 @@ router.get('/member-dues', async (req, res) => {
 router.get('/project-collections', async (req, res) => {
   try {
     const dateFilter = buildDateFilter(req.query);
-    
+
     const installments = await Installment.find(dateFilter)
       .populate('project', 'projectName projectType driverName driverMobile')
       .populate('recordedBy', 'name')
@@ -212,7 +232,7 @@ router.get('/project-dues', async (req, res) => {
     const duesReport = projects.map(project => {
       const projInstallments = installments.filter(inst => String(inst.project) === String(project._id));
       const totalPaid = projInstallments.reduce((sum, inst) => sum + inst.amount, 0);
-      
+
       const monthsElapsed = calculateMonthsElapsed(project.startDate);
       const activeMonths = Math.min(project.installmentDuration, monthsElapsed);
       const expectedInstallments = activeMonths * project.monthlyInstallmentAmount;
@@ -251,15 +271,13 @@ router.get('/profits', async (req, res) => {
     const profitsReport = projects.map(project => {
       const projInstallments = installments.filter(inst => String(inst.project) === String(project._id));
       const totalPaid = projInstallments.reduce((sum, inst) => sum + inst.amount, 0);
-      
+
       // Total target profit
       const profit = project.returnAmount - project.investmentAmount;
-      
-      // Current earned profit (based on installments collected)
-      // profitRatio = (return - investment) / return
-      const profitRatio = project.returnAmount > 0 ? (project.returnAmount - project.investmentAmount) / project.returnAmount : 0;
-      const currentProfit = Math.round(totalPaid * profitRatio);
-      
+
+      // Current earned profit (amount received after recovering the main investment amount)
+      const currentProfit = Math.max(0, totalPaid - project.investmentAmount);
+
       // Future profit = target profit - current profit earned
       const futureProfit = profit - currentProfit;
 
@@ -320,12 +338,11 @@ router.get('/member-summary', async (req, res) => {
     // Total profit target from all projects
     const totalTargetProfit = projects.reduce((sum, proj) => sum + (proj.returnAmount - proj.investmentAmount), 0);
 
-    // Current profit earned from all projects (proportional to collections)
+    // Current profit earned from all projects (amount received after recovering the main investment amount)
     const totalCurrentProfitEarned = projects.reduce((sum, proj) => {
       const projInstallments = installments.filter(inst => String(inst.project) === String(proj._id));
       const totalPaid = projInstallments.reduce((s, inst) => s + inst.amount, 0);
-      const profitRatio = proj.returnAmount > 0 ? (proj.returnAmount - proj.investmentAmount) / proj.returnAmount : 0;
-      const earnedProfit = totalPaid * profitRatio;
+      const earnedProfit = Math.max(0, totalPaid - proj.investmentAmount);
       return sum + earnedProfit;
     }, 0);
 
@@ -399,4 +416,3 @@ router.get('/member-summary', async (req, res) => {
 });
 
 module.exports = router;
-
