@@ -10,6 +10,7 @@ const ProjectSchema = new mongoose.Schema({
   nomineeName: { type: String, required: true },
   nomineeMobile: { type: String, required: true },
   investmentAmount: { type: Number, required: true },
+  interestPercentage: { type: Number },
   returnAmount: { type: Number, required: true },
   startDate: { type: Date, required: true },
   installmentDuration: { type: Number, required: true }, // In months

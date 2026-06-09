@@ -3,34 +3,30 @@ const router = express.Router();
 const Project = require('../models/Project');
 const Installment = require('../models/Installment');
 const { protect, admin } = require('../middleware/auth');
+const {
+  calcProjectMetrics,
+  syncProjectFinancials,
+  deriveInterestPercentage
+} = require('../utils/investmentCalculations');
 
-// Helper to calculate months elapsed since project start date (inclusive of start month and current month)
-const calculateMonthsElapsed = (startDate) => {
-  const start = new Date(startDate);
-  const end = new Date();
-  if (start > end) return 0;
-
-  const startYear = start.getFullYear();
-  const startMonth = start.getMonth();
-  const endYear = end.getFullYear();
-  const endMonth = end.getMonth();
-
-  return (endYear - startYear) * 12 + (endMonth - startMonth) + 1;
-};
+const enrichProject = (projectObj) => ({
+  ...projectObj,
+  interestPercentage: deriveInterestPercentage(projectObj)
+});
 
 // Helper to generate list of months from start date up to installment duration
 const generateProjectMonthsList = (startDate, durationMonths) => {
   const start = new Date(startDate);
   const list = [];
-  
+
   for (let i = 0; i < durationMonths; i++) {
     const temp = new Date(start.getFullYear(), start.getMonth() + i, 1);
     const year = temp.getFullYear();
     const month = String(temp.getMonth() + 1).padStart(2, '0');
     list.push(`${year}-${month}`);
   }
-  
-  return list; // Array of "YYYY-MM" strings for the duration of the project
+
+  return list;
 };
 
 // @desc    Get all projects with calculations
@@ -44,22 +40,12 @@ router.get('/', protect, async (req, res) => {
       projects.map(async (project) => {
         const installments = await Installment.find({ project: project._id });
         const totalPaid = installments.reduce((sum, inst) => sum + inst.amount, 0);
-
-        const monthsElapsed = calculateMonthsElapsed(project.startDate);
-        const activeMonths = Math.min(project.installmentDuration, monthsElapsed);
-        const expectedInstallments = activeMonths * project.monthlyInstallmentAmount;
-
-        const totalDue = Math.max(0, expectedInstallments - totalPaid);
-        const remainingBalance = Math.max(0, project.returnAmount - totalPaid);
-        const profit = project.returnAmount - project.investmentAmount;
+        const projectObj = enrichProject(project.toObject());
+        const metrics = calcProjectMetrics(projectObj, totalPaid);
 
         return {
-          ...project.toObject(),
-          totalPaid,
-          totalDue,
-          remainingBalance,
-          profit,
-          monthsElapsed
+          ...projectObj,
+          ...metrics
         };
       })
     );
@@ -82,16 +68,9 @@ router.get('/:id', protect, async (req, res) => {
 
     const installments = await Installment.find({ project: project._id }).sort({ date: -1 });
     const totalPaid = installments.reduce((sum, inst) => sum + inst.amount, 0);
+    const projectObj = enrichProject(project.toObject());
+    const metrics = calcProjectMetrics(projectObj, totalPaid);
 
-    const monthsElapsed = calculateMonthsElapsed(project.startDate);
-    const activeMonths = Math.min(project.installmentDuration, monthsElapsed);
-    const expectedInstallments = activeMonths * project.monthlyInstallmentAmount;
-
-    const totalDue = Math.max(0, expectedInstallments - totalPaid);
-    const remainingBalance = Math.max(0, project.returnAmount - totalPaid);
-    const profit = project.returnAmount - project.investmentAmount;
-
-    // Generate schedule status for all duration months
     const durationMonthsList = generateProjectMonthsList(project.startDate, project.installmentDuration);
     const currentStr = (() => {
       const d = new Date();
@@ -102,18 +81,14 @@ router.get('/:id', protect, async (req, res) => {
       const monthInstallments = installments.filter((inst) => inst.month === mStr);
       const paidAmount = monthInstallments.reduce((sum, inst) => sum + inst.amount, 0);
       const isPaid = paidAmount >= project.monthlyInstallmentAmount;
-      
+
       let status = 'DUE';
       if (isPaid) {
         status = 'PAID';
       } else if (paidAmount > 0) {
         status = 'PARTIAL';
-      } else {
-        // If the month is in the future, it shouldn't show as overdue due, just "UPCOMING" or simple status.
-        // But let's check if month is after current month.
-        if (mStr > currentStr) {
-          status = 'UPCOMING';
-        }
+      } else if (mStr > currentStr) {
+        status = 'UPCOMING';
       }
 
       return {
@@ -126,15 +101,8 @@ router.get('/:id', protect, async (req, res) => {
     });
 
     res.json({
-      project,
-      calculations: {
-        totalPaid,
-        expectedInstallments,
-        totalDue,
-        remainingBalance,
-        profit,
-        monthsElapsed
-      },
+      project: projectObj,
+      calculations: metrics,
       schedule,
       installments
     });
@@ -156,15 +124,14 @@ router.post('/', protect, admin, async (req, res) => {
     driverNid,
     nomineeName,
     nomineeMobile,
-    investmentAmount,
-    returnAmount,
     startDate,
-    installmentDuration,
-    monthlyInstallmentAmount,
-    status
+    status,
+    lastEdited
   } = req.body;
 
   try {
+    const financials = syncProjectFinancials({ ...req.body, lastEdited });
+
     const project = new Project({
       projectName,
       projectType,
@@ -174,16 +141,13 @@ router.post('/', protect, admin, async (req, res) => {
       driverNid,
       nomineeName,
       nomineeMobile,
-      investmentAmount: Number(investmentAmount),
-      returnAmount: Number(returnAmount),
+      ...financials,
       startDate,
-      installmentDuration: Number(installmentDuration),
-      monthlyInstallmentAmount: Number(monthlyInstallmentAmount),
       status
     });
 
     const createdProject = await project.save();
-    res.status(201).json(createdProject);
+    res.status(201).json(enrichProject(createdProject.toObject()));
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
@@ -205,15 +169,21 @@ router.put('/:id', protect, admin, async (req, res) => {
       project.driverNid = req.body.driverNid || project.driverNid;
       project.nomineeName = req.body.nomineeName || project.nomineeName;
       project.nomineeMobile = req.body.nomineeMobile || project.nomineeMobile;
-      project.investmentAmount = req.body.investmentAmount !== undefined ? Number(req.body.investmentAmount) : project.investmentAmount;
-      project.returnAmount = req.body.returnAmount !== undefined ? Number(req.body.returnAmount) : project.returnAmount;
       project.startDate = req.body.startDate || project.startDate;
-      project.installmentDuration = req.body.installmentDuration !== undefined ? Number(req.body.installmentDuration) : project.installmentDuration;
-      project.monthlyInstallmentAmount = req.body.monthlyInstallmentAmount !== undefined ? Number(req.body.monthlyInstallmentAmount) : project.monthlyInstallmentAmount;
       project.status = req.body.status || project.status;
 
+      const financials = syncProjectFinancials({
+        investmentAmount: req.body.investmentAmount ?? project.investmentAmount,
+        interestPercentage: req.body.interestPercentage ?? project.interestPercentage,
+        returnAmount: req.body.returnAmount ?? project.returnAmount,
+        installmentDuration: req.body.installmentDuration ?? project.installmentDuration,
+        lastEdited: req.body.lastEdited
+      });
+
+      Object.assign(project, financials);
+
       const updatedProject = await project.save();
-      res.json(updatedProject);
+      res.json(enrichProject(updatedProject.toObject()));
     } else {
       res.status(404).json({ message: 'প্রজেক্ট পাওয়া যায়নি' });
     }
@@ -245,7 +215,7 @@ router.post('/:id/installment', protect, admin, async (req, res) => {
     const installment = new Installment({
       project: project._id,
       amount: Number(amount),
-      month, // Format: "YYYY-MM"
+      month,
       date: date ? new Date(date) : Date.now(),
       recordedBy: req.user._id
     });

@@ -559,6 +559,7 @@ const seedSystem = async () => {
         nomineeName: pData.nomineeName,
         nomineeMobile: pData.nomineeMobile,
         investmentAmount: pData.investmentAmount,
+        interestPercentage: ((pData.returnAmount - pData.investmentAmount) / pData.investmentAmount) * 100,
         returnAmount: pData.returnAmount,
         startDate: pData.startDate,
         installmentDuration: pData.installmentDuration,
