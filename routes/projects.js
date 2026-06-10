@@ -242,4 +242,42 @@ router.get('/:id/history', protect, async (req, res) => {
   }
 });
 
+// @desc    Delete project
+// @route   DELETE /api/projects/:id
+// @access  Private/Admin
+router.delete('/:id', protect, admin, async (req, res) => {
+  try {
+    const project = await Project.findById(req.params.id);
+    if (!project) {
+      return res.status(404).json({ message: 'প্রজেক্ট পাওয়া যায়নি' });
+    }
+
+    // Delete associated Installment records
+    await Installment.deleteMany({ project: project._id });
+    // Delete the project
+    await project.deleteOne();
+
+    res.json({ message: 'প্রজেক্ট এবং তার সংশ্লিষ্ট সমস্ত কিস্তির রেকর্ড সফলভাবে মুছে ফেলা হয়েছে' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// @desc    Delete installment record
+// @route   DELETE /api/projects/installment/:id
+// @access  Private/Admin
+router.delete('/installment/:id', protect, admin, async (req, res) => {
+  try {
+    const installment = await Installment.findById(req.params.id);
+    if (!installment) {
+      return res.status(404).json({ message: 'কিস্তির রেকর্ড পাওয়া যায়নি' });
+    }
+
+    await installment.deleteOne();
+    res.json({ message: 'কিস্তির রেকর্ডটি সফলভাবে মুছে ফেলা হয়েছে' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 module.exports = router;

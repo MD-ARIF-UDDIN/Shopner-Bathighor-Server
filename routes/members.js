@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Member = require('../models/Member');
 const Deposit = require('../models/Deposit');
+const User = require('../models/User');
 const { protect, admin } = require('../middleware/auth');
 
 // Helper to calculate months elapsed since joining date
@@ -229,6 +230,46 @@ router.get('/:id/history', protect, async (req, res) => {
       .sort({ date: -1 });
       
     res.json(deposits);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// @desc    Delete member
+// @route   DELETE /api/members/:id
+// @access  Private/Admin
+router.delete('/:id', protect, admin, async (req, res) => {
+  try {
+    const member = await Member.findById(req.params.id);
+    if (!member) {
+      return res.status(404).json({ message: 'সদস্য পাওয়া যায়নি' });
+    }
+
+    // Delete associated User accounts
+    await User.deleteMany({ memberId: member._id });
+    // Delete associated Deposit records
+    await Deposit.deleteMany({ member: member._id });
+    // Delete the member
+    await member.deleteOne();
+
+    res.json({ message: 'সদস্য এবং তার সংশ্লিষ্ট সমস্ত তথ্য সফলভাবে মুছে ফেলা হয়েছে' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// @desc    Delete deposit record
+// @route   DELETE /api/members/deposit/:id
+// @access  Private/Admin
+router.delete('/deposit/:id', protect, admin, async (req, res) => {
+  try {
+    const deposit = await Deposit.findById(req.params.id);
+    if (!deposit) {
+      return res.status(404).json({ message: 'জমার রেকর্ড পাওয়া যায়নি' });
+    }
+
+    await deposit.deleteOne();
+    res.json({ message: 'জমার রেকর্ডটি সফলভাবে মুছে ফেলা হয়েছে' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

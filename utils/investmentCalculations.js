@@ -59,6 +59,7 @@ const calcProjectMetrics = (project, totalPaid = 0, monthsElapsed = null) => {
   const I = T - P;
   const monthlyInstallment = project.monthlyInstallmentAmount ?? calcMonthlyInstallment(T, N);
   const monthlyInterest = N > 0 ? I / N : 0;
+  const monthlyPrincipal = N > 0 ? P / N : 0;
 
   const elapsed = monthsElapsed != null ? monthsElapsed : calculateProjectMonthsElapsed(project.startDate);
   const activeMonths = Math.min(N, elapsed);
@@ -66,7 +67,13 @@ const calcProjectMetrics = (project, totalPaid = 0, monthsElapsed = null) => {
 
   const totalPayable = P + monthlyInterest * K;
   const expectedInstallments = K * monthlyInstallment;
-  const totalDue = Math.max(0, expectedInstallments - totalPaid);
+  
+  const principalPaid = Math.min(P, totalPaid);
+  const interestPaid = Math.max(0, totalPaid - P);
+  const duePrincipal = Math.max(0, K * monthlyPrincipal - principalPaid);
+  const dueInterest = Math.max(0, K * monthlyInterest - interestPaid);
+  const totalDue = duePrincipal + dueInterest;
+
   const remainingBalance = Math.max(0, totalPayable - totalPaid);
   const profit = I;
   const currentProfit = Math.max(0, totalPaid - P);
