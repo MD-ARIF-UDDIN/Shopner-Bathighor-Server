@@ -121,6 +121,11 @@ const calcProjectMetrics = (project, totalPaid = 0, monthsElapsed = null, instal
   const principalRemaining = Math.max(0, P - totalPaid);
   const futureProfit = Math.max(0, totalPayable - totalPaid - principalRemaining);
 
+  const isSettled = project.status === 'completed' || remainingBalance === 0;
+  const durationMonths = isSettled
+    ? (isCompletedEarly ? completionK : K)
+    : elapsed;
+
   return {
     totalPaid,
     monthsElapsed: elapsed,
@@ -134,7 +139,9 @@ const calcProjectMetrics = (project, totalPaid = 0, monthsElapsed = null, instal
     remainingBalance,
     profit,
     currentProfit,
-    futureProfit
+    futureProfit,
+    isSettled,
+    durationMonths
   };
 };
 
