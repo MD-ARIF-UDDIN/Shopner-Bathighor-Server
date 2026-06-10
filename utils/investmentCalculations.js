@@ -52,7 +52,7 @@ const calculateProjectMonthsElapsed = (startDate) => {
   return (endYear - startYear) * 12 + (endMonth - startMonth) + 1;
 };
 
-const calcProjectMetrics = (project, totalPaid = 0, monthsElapsed = null) => {
+const calcProjectMetrics = (project, totalPaid = 0, monthsElapsed = null, installments = []) => {
   const P = project.investmentAmount;
   const T = project.returnAmount;
   const N = project.installmentDuration;
@@ -65,17 +65,58 @@ const calcProjectMetrics = (project, totalPaid = 0, monthsElapsed = null) => {
   const activeMonths = Math.min(N, elapsed);
   const K = activeMonths;
 
-  const totalPayable = P + monthlyInterest * K;
+  let totalPayable = T; // Default to full target return if not completed/paid off early
+  let isCompletedEarly = false;
+  let completionK = K;
+
+  if (totalPaid >= P) {
+    // They have paid off the main investment (principal)!
+    isCompletedEarly = true;
+    
+    // Find the month when the principal P was paid off using installments list
+    if (installments && installments.length > 0) {
+      // Sort installments chronologically
+      const sortedInst = [...installments].sort((a, b) => new Date(a.date) - new Date(b.date));
+      let runningSum = 0;
+      let completionDate = null;
+      for (const inst of sortedInst) {
+        runningSum += inst.amount;
+        if (runningSum >= P) {
+          completionDate = inst.date;
+          break;
+        }
+      }
+      if (completionDate) {
+        const start = new Date(project.startDate);
+        const end = new Date(completionDate);
+        if (start <= end) {
+          const startYear = start.getFullYear();
+          const startMonth = start.getMonth();
+          const endYear = end.getFullYear();
+          const endMonth = end.getMonth();
+          const calculatedK = (endYear - startYear) * 12 + (endMonth - startMonth) + 1;
+          completionK = Math.min(N, Math.max(1, calculatedK));
+        }
+      }
+    }
+    totalPayable = P + monthlyInterest * completionK;
+  }
+
   const expectedInstallments = K * monthlyInstallment;
   
   const principalPaid = Math.min(P, totalPaid);
   const interestPaid = Math.max(0, totalPaid - P);
   const duePrincipal = Math.max(0, K * monthlyPrincipal - principalPaid);
   const dueInterest = Math.max(0, K * monthlyInterest - interestPaid);
-  const totalDue = duePrincipal + dueInterest;
+  let totalDue = duePrincipal + dueInterest;
+
+  if (totalPaid >= P) {
+    // If they have paid off the principal, they are settled/completed, so due is 0
+    totalDue = 0;
+  }
 
   const remainingBalance = Math.max(0, totalPayable - totalPaid);
-  const profit = I;
+  const profit = isCompletedEarly ? (totalPayable - P) : I;
   const currentProfit = Math.max(0, totalPaid - P);
   const principalRemaining = Math.max(0, P - totalPaid);
   const futureProfit = Math.max(0, totalPayable - totalPaid - principalRemaining);
@@ -83,8 +124,8 @@ const calcProjectMetrics = (project, totalPaid = 0, monthsElapsed = null) => {
   return {
     totalPaid,
     monthsElapsed: elapsed,
-    activeMonths: K,
-    interestAmount: I,
+    activeMonths: isCompletedEarly ? completionK : K,
+    interestAmount: isCompletedEarly ? (totalPayable - P) : I,
     monthlyInterest,
     monthlyInstallment,
     totalPayable,

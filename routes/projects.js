@@ -41,7 +41,7 @@ router.get('/', protect, async (req, res) => {
         const installments = await Installment.find({ project: project._id });
         const totalPaid = installments.reduce((sum, inst) => sum + inst.amount, 0);
         const projectObj = enrichProject(project.toObject());
-        const metrics = calcProjectMetrics(projectObj, totalPaid);
+        const metrics = calcProjectMetrics(projectObj, totalPaid, null, installments);
 
         return {
           ...projectObj,
@@ -69,7 +69,7 @@ router.get('/:id', protect, async (req, res) => {
     const installments = await Installment.find({ project: project._id }).sort({ date: -1 });
     const totalPaid = installments.reduce((sum, inst) => sum + inst.amount, 0);
     const projectObj = enrichProject(project.toObject());
-    const metrics = calcProjectMetrics(projectObj, totalPaid);
+    const metrics = calcProjectMetrics(projectObj, totalPaid, null, installments);
 
     const durationMonthsList = generateProjectMonthsList(project.startDate, project.installmentDuration);
     const currentStr = (() => {

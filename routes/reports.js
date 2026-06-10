@@ -77,7 +77,7 @@ router.get('/dashboard', async (req, res) => {
     for (const project of projects) {
       const projInstallments = installments.filter(inst => String(inst.project) === String(project._id));
       const totalPaid = projInstallments.reduce((sum, inst) => sum + inst.amount, 0);
-      const metrics = calcProjectMetrics(project, totalPaid, calculateProjectMonthsElapsed(project.startDate));
+      const metrics = calcProjectMetrics(project, totalPaid, calculateProjectMonthsElapsed(project.startDate), projInstallments);
       projectDueAmount += metrics.totalDue;
     }
 
@@ -233,7 +233,7 @@ router.get('/project-dues', async (req, res) => {
     const duesReport = projects.map(project => {
       const projInstallments = installments.filter(inst => String(inst.project) === String(project._id));
       const totalPaid = projInstallments.reduce((sum, inst) => sum + inst.amount, 0);
-      const metrics = calcProjectMetrics(project, totalPaid, calculateProjectMonthsElapsed(project.startDate));
+      const metrics = calcProjectMetrics(project, totalPaid, calculateProjectMonthsElapsed(project.startDate), projInstallments);
 
       return {
         _id: project._id,
@@ -268,7 +268,7 @@ router.get('/profits', async (req, res) => {
     const profitsReport = projects.map(project => {
       const projInstallments = installments.filter(inst => String(inst.project) === String(project._id));
       const totalPaid = projInstallments.reduce((sum, inst) => sum + inst.amount, 0);
-      const metrics = calcProjectMetrics(project, totalPaid, calculateProjectMonthsElapsed(project.startDate));
+      const metrics = calcProjectMetrics(project, totalPaid, calculateProjectMonthsElapsed(project.startDate), projInstallments);
 
       return {
         _id: project._id,
@@ -319,7 +319,7 @@ router.get('/member-summary', async (req, res) => {
     const totalRemainingProjectReturn = projects.reduce((sum, proj) => {
       const projInstallments = installments.filter(inst => String(inst.project) === String(proj._id));
       const totalPaid = projInstallments.reduce((s, inst) => s + inst.amount, 0);
-      const metrics = calcProjectMetrics(proj, totalPaid, calculateProjectMonthsElapsed(proj.startDate));
+      const metrics = calcProjectMetrics(proj, totalPaid, calculateProjectMonthsElapsed(proj.startDate), projInstallments);
       return sum + metrics.remainingBalance;
     }, 0);
 
