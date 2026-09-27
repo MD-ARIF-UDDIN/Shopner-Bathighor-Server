@@ -23,7 +23,15 @@ router.get('/', async (req, res) => {
 // @route   POST /api/users
 // @access  Private/Admin
 router.post('/', async (req, res) => {
-  const { name, mobile, username, password, role, status, memberId } = req.body;
+  let { name, mobile, username, password, role, status, memberId } = req.body;
+
+  if (!name || !mobile || !username || !password) {
+    return res.status(400).json({ message: 'নাম, মোবাইল, ইউজারনেম এবং পাসওয়ার্ড পূরণ করা আবশ্যক' });
+  }
+
+  name = name.trim();
+  mobile = mobile.trim();
+  username = username.trim().toLowerCase();
 
   try {
     const userExists = await User.findOne({ username });
@@ -37,8 +45,8 @@ router.post('/', async (req, res) => {
       mobile,
       username,
       password,
-      role,
-      status,
+      role: role || 'member',
+      status: status || 'active',
       memberId: memberId || null
     });
 
@@ -52,6 +60,9 @@ router.post('/', async (req, res) => {
       memberId: user.memberId
     });
   } catch (error) {
+    if (error.code === 11000) {
+      return res.status(400).json({ message: 'এই ইউজারনেমটি ইতিমধ্যে ব্যবহৃত হয়েছে বা ডাটাবেজে কনফ্লিক্ট রয়েছে' });
+    }
     res.status(400).json({ message: error.message });
   }
 });
